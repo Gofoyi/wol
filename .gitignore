@@ -46,3 +46,5 @@ venv.bak/
 # OS
 .DS_Store
 Thumbs.db
+cloud/user_credentials.json
+cloud/user_credentials.json.backup

@@ -2,8 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>远程控制 Windows 主机</title>
-    <!-- Emoji SVG Favicon 居中显示 -->
+    <title>远程控制 Windows 主机 - 安全认证版</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text x='50%' y='58%' text-anchor='middle' dominant-baseline='middle' font-size='70'>🖥️</text></svg>">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
@@ -14,157 +13,302 @@
             margin: 0;
             padding: 0;
         }
+        
+        .header {
+            background: white;
+            padding: 15px 25px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .auth-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .auth-badge {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            color: white;
+            padding: 8px 15px;
+            border-radius: 25px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .session-timer {
+            background: #e3f2fd;
+            color: #1565c0;
+            padding: 8px 15px;
+            border-radius: 25px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            border: 2px solid #2196f3;
+            transition: all 0.3s ease;
+        }
+        
+        .session-timer.warning {
+            background: #ffebee;
+            color: #d32f2f;
+            border-color: #f44336;
+            animation: pulse 1s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+        
+        .logout-btn {
+            background: #f44336;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .logout-btn:hover {
+            background: #d32f2f;
+            transform: translateY(-1px);
+        }
+        
         .container {
-            max-width: 420px;
-            margin: 60px auto;
+            max-width: 450px;
+            margin: 30px auto;
             background: #fff;
-            border-radius: 12px;
-            box-shadow: 0 4px 32px rgba(33, 150, 243, 0.10);
-            padding: 36px 26px 32px 26px;
+            border-radius: 18px;
+            box-shadow: 0 10px 40px rgba(33, 150, 243, 0.15);
+            padding: 40px 35px;
             text-align: center;
         }
+        
         h1 {
-            font-size: 1.35rem;
+            font-size: 1.5rem;
             color: #2196f3;
             font-weight: 700;
-            margin-bottom: 26px;
-            letter-spacing: 1px;
+            margin-bottom: 25px;
+            letter-spacing: 0.5px;
         }
+        
         .status {
-            font-size: 1.02rem;
-            margin-bottom: 12px;
-            padding: 10px 0;
-            min-height: 30px;
-            border-radius: 9px;
+            font-size: 1rem;
+            margin-bottom: 15px;
+            padding: 15px 0;
+            min-height: 35px;
+            border-radius: 12px;
             font-weight: 500;
             background: #f2f6fa;
-            transition: background 0.25s, color 0.25s;
-            box-shadow: 0 1px 4px rgba(33, 150, 243, 0.06);
+            transition: all 0.3s;
+            box-shadow: 0 3px 10px rgba(33, 150, 243, 0.1);
             display: flex;
             align-items: center;
             justify-content: center;
         }
+        
         .status.online {
-            background: #e3f9ec;
+            background: #e8f5e8;
             color: #2e7d32;
+            box-shadow: 0 3px 10px rgba(46, 125, 50, 0.2);
         }
+        
         .status.offline {
             background: #ffebee;
             color: #d32f2f;
+            box-shadow: 0 3px 10px rgba(211, 47, 47, 0.2);
         }
+        
         .status.detecting {
             background: #f5f5f5;
             color: #888;
         }
+        
         .button-container {
             display: flex;
-            gap: 12px;
-            margin-top: 22px;
-            margin-bottom: 8px;
+            gap: 18px;
+            margin-top: 30px;
+            margin-bottom: 15px;
         }
+        
         .control-button {
             flex: 1;
-            padding: 11px 20px;
+            padding: 16px 22px;
             border: none;
-            border-radius: 50px;
-            font-size: 1.08rem;
+            border-radius: 30px;
+            font-size: 1.1rem;
             font-weight: 600;
             cursor: pointer;
-            box-shadow: 0 2px 8px rgba(33, 150, 243, 0.10);
+            box-shadow: 0 5px 20px rgba(33, 150, 243, 0.15);
             transition: all 0.3s;
+            position: relative;
+            overflow: hidden;
         }
+        
         .wake-button {
-            background: linear-gradient(90deg, #2196f3 0%, #42a5f5 100%);
+            background: linear-gradient(135deg, #2196f3 0%, #42a5f5 100%);
             color: white;
         }
+        
         .wake-button:hover:not(:disabled) {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(33, 150, 243, 0.20);
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(33, 150, 243, 0.3);
         }
+        
         .sleep-button {
-            background: linear-gradient(90deg, #6f42c1 0%, #8e44ad 100%);
+            background: linear-gradient(135deg, #6f42c1 0%, #8e44ad 100%);
             color: white;
         }
+        
         .sleep-button:hover:not(:disabled) {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(111, 66, 193, 0.20);
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(111, 66, 193, 0.3);
         }
+        
         .control-button:disabled {
             opacity: 0.5;
             cursor: not-allowed;
             transform: none !important;
         }
+        
         .loading {
             display: none;
-            margin: 18px auto 0 auto;
+            margin: 25px auto 0 auto;
         }
+        
         .spinner {
             border: 4px solid #e3e9f0;
             border-top: 4px solid #2196F3;
             border-radius: 50%;
-            width: 21px;
-            height: 21px;
+            width: 28px;
+            height: 28px;
             animation: spin 1s linear infinite;
             display: inline-block;
             vertical-align: middle;
-            margin-right: 8px;
+            margin-right: 12px;
         }
+        
         @keyframes spin {
-            0% { transform: rotate(0deg);}
-            100% { transform: rotate(360deg);}
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
+        
         .message {
-            margin-top: 20px;
-            padding: 10px;
-            border-radius: 7px;
+            margin-top: 25px;
+            padding: 15px;
+            border-radius: 10px;
             display: none;
-            font-size: 1.05rem;
+            font-size: 1rem;
+            font-weight: 500;
         }
+        
         .message.success {
-            background: #e3f9ec;
+            background: #e8f5e8;
             color: #2e7d32;
+            border: 1px solid #c8e6c9;
         }
+        
         .message.error {
             background: #ffebee;
             color: #d32f2f;
+            border: 1px solid #ffcdd2;
         }
-        .sleep-info {
-            background: #e8f4fd;
+        
+        .info-box {
+            background: #e3f2fd;
             border-left: 4px solid #2196f3;
-            padding: 12px;
-            margin: 16px 0;
-            border-radius: 6px;
-            font-size: 0.9rem;
+            padding: 18px;
+            margin: 25px 0;
+            border-radius: 10px;
+            font-size: 0.95rem;
             text-align: left;
             color: #1565c0;
         }
+        
+        .security-notice {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            font-size: 0.9rem;
+            text-align: center;
+        }
+        
         @media (max-width: 520px) {
             .container {
-                max-width: 99vw;
-                padding: 16px 3vw 24px 3vw;
+                max-width: 95vw;
+                padding: 30px 20px;
+                margin: 20px auto;
             }
-            h1 { font-size: 1.09rem; }
+            
+            h1 { font-size: 1.3rem; }
+            
             .button-container {
                 flex-direction: column;
-                gap: 8px;
+                gap: 15px;
             }
+            
             .control-button {
                 font-size: 1.05rem;
+            }
+            
+            .header {
+                padding: 12px 15px;
+            }
+            
+            .auth-info {
+                gap: 8px;
+            }
+            
+            .auth-badge, .session-timer {
+                font-size: 0.8rem;
+                padding: 6px 12px;
             }
         }
     </style>
 </head>
 <body>
+    <div class="header">
+        <div class="auth-info">
+            <div class="auth-badge">
+                🔐 已通过生物识别
+            </div>
+            <div class="session-timer" id="sessionTimer">
+                ⏱️ 会话剩余: 5:00
+            </div>
+        </div>
+        <button class="logout-btn" onclick="logout()">
+            🚪 登出
+        </button>
+    </div>
+
     <div class="container">
         <h1>🖥️ 远程控制 Windows 主机</h1>
         
-        <div id="status" class="status detecting">检查服务器状态中...</div>
-        <div id="win_status" class="status detecting" style="margin-top:10px;">检查 Windows 主机状态中...</div>
+        <div class="security-notice">
+            <strong>🛡️ 安全提示：</strong> 会话将在5分钟后自动过期，届时需要重新进行生物识别验证
+        </div>
         
-        <div class="sleep-info">
+        <div id="status" class="status detecting">检查服务器状态中...</div>
+        <div id="win_status" class="status detecting" style="margin-top:12px;">检查 Windows 主机状态中...</div>
+        
+        <div class="info-box">
             <strong>💡 功能说明：</strong><br>
             • 唤醒：通过网络唤醒包启动主机<br>
-            • 睡眠：使用优化方法进入睡眠模式（非休眠）
+            • 睡眠：使用优化方法进入睡眠模式<br>
+            • 安全：每次访问都需要生物识别验证<br>
+            • 智能：自动检测状态变化并实时更新
         </div>
         
         <div class="button-container">
@@ -187,12 +331,74 @@
     <script>
         let isWindowsOnline = false;
         let isUbuntuOnline = false;
+        let sessionStartTime = Date.now();
+        let sessionTimeout = {{ session_timeout * 1000 if session_timeout else 300000 }}; // 从后端获取或默认5分钟
+
+        // 会话倒计时
+        function updateSessionTimer() {
+            const elapsed = Date.now() - sessionStartTime;
+            const remaining = Math.max(0, sessionTimeout - elapsed);
+            
+            if (remaining === 0) {
+                alert('会话已过期，将重定向到认证页面');
+                window.location.href = '/';
+                return;
+            }
+            
+            const minutes = Math.floor(remaining / 60000);
+            const seconds = Math.floor((remaining % 60000) / 1000);
+            
+            const timerElement = document.getElementById('sessionTimer');
+            timerElement.textContent = `⏱️ 会话剩余: ${minutes}:${seconds.toString().padStart(2, '0')}`;
+            
+            // 最后30秒时变红色警告
+            if (remaining <= 30000) {
+                timerElement.classList.add('warning');
+            } else {
+                timerElement.classList.remove('warning');
+            }
+        }
+
+        // 每秒更新倒计时
+        setInterval(updateSessionTimer, 1000);
+
+        // 处理认证错误
+        function handleAuthError(response) {
+            if (response.status === 401) {
+                response.json().then(data => {
+                    alert(data.error || '认证已过期，请重新进行生物识别验证');
+                    window.location.href = '/';
+                }).catch(() => {
+                    window.location.href = '/';
+                });
+                return true;
+            }
+            return false;
+        }
+
+        // 登出功能
+        function logout() {
+            if (confirm('确定要登出吗？')) {
+                fetch('/logout', { method: 'POST' })
+                    .then(response => response.json())
+                    .then(data => {
+                        window.location.href = '/';
+                    })
+                    .catch(() => {
+                        window.location.href = '/';
+                    });
+            }
+        }
 
         // 检查 Ubuntu 服务器状态
         function checkStatus() {
             fetch('/status')
-                .then(response => response.json())
+                .then(response => {
+                    if (handleAuthError(response)) return;
+                    return response.json();
+                })
                 .then(data => {
+                    if (!data) return;
                     const statusDiv = document.getElementById('status');
                     
                     isUbuntuOnline = data.ubuntu_server === 'online';
@@ -219,10 +425,14 @@
         // 检查 Windows 主机状态
         function checkWinStatus() {
             fetch('/win_status')
-                .then(response => response.json())
+                .then(response => {
+                    if (handleAuthError(response)) return;
+                    return response.json();
+                })
                 .then(data => {
+                    if (!data) return;
                     const winStatusDiv = document.getElementById('win_status');
-                    isWindowsOnline = data.win_status === 'online';
+                    isWindowsOnline = data.online || data.win_status === 'online';
                     
                     if (isWindowsOnline) {
                         winStatusDiv.textContent = '✅ Windows 主机已开机';
@@ -248,21 +458,18 @@
             const wakeButton = document.getElementById('wakeButton');
             const sleepButton = document.getElementById('sleepButton');
             
-            // 唤醒按钮：Ubuntu在线时可用
             wakeButton.disabled = !isUbuntuOnline;
-            
-            // 睡眠按钮：Ubuntu在线且Windows在线时可用
             sleepButton.disabled = !isUbuntuOnline || !isWindowsOnline;
         }
 
-        // 显示正在检测 Windows 启动状态
+        // 显示 Windows 启动检测状态
         function showWinDetecting() {
             const winStatusDiv = document.getElementById('win_status');
             winStatusDiv.innerHTML = '<span class="spinner"></span>正在检测 Windows 启动状态...';
             winStatusDiv.className = 'status detecting';
         }
 
-        // 显示正在检测 Windows 睡眠状态
+        // 显示 Windows 睡眠检测状态
         function showWinSleeping() {
             const winStatusDiv = document.getElementById('win_status');
             winStatusDiv.innerHTML = '<span class="spinner"></span>正在检测 Windows 睡眠状态...';
@@ -307,8 +514,12 @@
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'}
             })
-            .then(response => response.json())
+            .then(response => {
+                if (handleAuthError(response)) return;
+                return response.json();
+            })
             .then(data => {
+                if (!data) return;
                 hideLoading();
                 
                 if (data.success) {
@@ -345,8 +556,12 @@
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'}
             })
-            .then(response => response.json())
+            .then(response => {
+                if (handleAuthError(response)) return;
+                return response.json();
+            })
             .then(data => {
+                if (!data) return;
                 hideLoading();
                 
                 if (data.success) {
@@ -373,9 +588,13 @@
 
             function check() {
                 fetch('/win_status')
-                    .then(response => response.json())
+                    .then(response => {
+                        if (handleAuthError(response)) return;
+                        return response.json();
+                    })
                     .then(data => {
-                        if (data.online) {
+                        if (!data) return;
+                        if (data.online || data.win_status === 'online') {
                             document.getElementById('win_status').textContent = '✅ Windows 主机已开机';
                             document.getElementById('win_status').className = 'status online';
                             isWindowsOnline = true;
@@ -385,7 +604,7 @@
                             if (elapsed < timeoutMs) {
                                 setTimeout(check, intervalMs);
                             } else {
-                                document.getElementById('win_status').textContent = '❌ Windows 主机未开机';
+                                document.getElementById('win_status').textContent = '❌ Windows 主机启动超时';
                                 document.getElementById('win_status').className = 'status offline';
                                 isWindowsOnline = false;
                                 updateButtonStates();
@@ -415,9 +634,13 @@
 
             function check() {
                 fetch('/win_status')
-                    .then(response => response.json())
+                    .then(response => {
+                        if (handleAuthError(response)) return;
+                        return response.json();
+                    })
                     .then(data => {
-                        if (!data.online) {
+                        if (!data) return;
+                        if (!data.online && data.win_status !== 'online') {
                             document.getElementById('win_status').textContent = '✅ Windows 主机已进入睡眠';
                             document.getElementById('win_status').className = 'status offline';
                             isWindowsOnline = false;
@@ -452,7 +675,6 @@
         // 页面加载时初始化状态
         checkStatus();
         checkWinStatus();
-        // 每30秒检查一次状态
         setInterval(checkStatus, 30000);
         setInterval(checkWinStatus, 30000);
     </script>

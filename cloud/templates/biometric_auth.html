@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>生物识别认证 - WOL远程控制</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text x='50%' y='58%' text-anchor='middle' dominant-baseline='middle' font-size='70'>🔐</text></svg>">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: "Segoe UI", "Microsoft YaHei", Arial, sans-serif;
+            color: #333;
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .auth-container {
+            background: white;
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 420px;
+            text-align: center;
+        }
+        .auth-title {
+            font-size: 2rem;
+            color: #333;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+        .auth-subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 1.1rem;
+        }
+        .biometric-icon {
+            font-size: 5rem;
+            margin-bottom: 30px;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { transform: scale(1); opacity: 0.8; }
+            50% { transform: scale(1.05); opacity: 1; }
+            100% { transform: scale(1); opacity: 0.8; }
+        }
+        .auth-button {
+            width: 100%;
+            padding: 18px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 15px;
+            font-size: 1.2rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-bottom: 15px;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        }
+        .auth-button:hover:not(:disabled) {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
+        }
+        .auth-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .register-button {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            box-shadow: 0 4px 15px rgba(40, 167, 69, 0.3);
+        }
+        .register-button:hover:not(:disabled) {
+            box-shadow: 0 8px 25px rgba(40, 167, 69, 0.4);
+        }
+        .message {
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+            display: none;
+            font-weight: 500;
+        }
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .message.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .welcome-text {
+            background: #e3f2fd;
+            color: #1565c0;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 25px;
+            font-size: 1rem;
+            border-left: 4px solid #2196f3;
+        }
+        .support-info {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 12px;
+            margin-top: 25px;
+            font-size: 0.9rem;
+            color: #6c757d;
+            text-align: left;
+        }
+        .support-info h4 {
+            margin-top: 0;
+            color: #495057;
+            font-size: 1rem;
+        }
+        .support-info ul {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+        .loading {
+            display: none;
+            margin: 25px 0;
+        }
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 35px;
+            height: 35px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .session-info {
+            background: #fff3cd;
+            color: #856404;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 20px;
+            font-size: 0.9rem;
+            border: 1px solid #ffeaa7;
+        }
+        @media (max-width: 480px) {
+            .auth-container {
+                margin: 20px;
+                padding: 30px 20px;
+            }
+            .auth-title {
+                font-size: 1.6rem;
+            }
+            .biometric-icon {
+                font-size: 4rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="auth-container">
+        <h1 class="auth-title">🔐 安全验证</h1>
+        <p class="auth-subtitle">请使用生物识别进行身份验证</p>
+        
+        <div class="welcome-text">
+            <strong>🖥️ WOL远程控制系统</strong><br>
+            为保护您的设备安全，每次访问都需要进行生物识别验证
+        </div>
+        
+        <div class="biometric-icon" id="biometricIcon">🔍</div>
+        
+        <div id="message" class="message"></div>
+        
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p id="loadingText">处理中...</p>
+        </div>
+        
+        <button id="authButton" class="auth-button" onclick="authenticate()">
+            🔓 开始生物识别验证
+        </button>
+        
+        <button id="registerButton" class="auth-button register-button" onclick="register()" style="display: none;">
+            📝 注册生物识别
+        </button>
+        
+        <div class="session-info">
+            <strong>⏱️ 会话管理：</strong><br>
+            认证成功后，您有5分钟的操作时间。超时后需要重新验证。
+        </div>
+        
+        <div class="support-info">
+            <h4>🛡️ 支持的认证方式：</h4>
+            <ul>
+                <li><strong>iPhone/iPad:</strong> Face ID / Touch ID</li>
+                <li><strong>Mac:</strong> Touch ID / Apple Watch解锁</li>
+                <li><strong>Android:</strong> 指纹识别 / 面部识别</li>
+                <li><strong>Windows:</strong> Windows Hello（指纹/面部）</li>
+            </ul>
+            <p><strong>首次使用提示：</strong>如果是第一次访问，需要先注册您的生物特征信息</p>
+        </div>
+    </div>
+
+    <script>
+        const username = 'wol_user'; // 固定用户名
+        
+        // 检查WebAuthn支持
+        if (!window.PublicKeyCredential) {
+            showMessage('您的浏览器不支持生物识别认证，请使用支持WebAuthn的现代浏览器', 'error');
+            document.getElementById('authButton').disabled = true;
+        }
+
+        function showMessage(text, type) {
+            const message = document.getElementById('message');
+            message.textContent = text;
+            message.className = `message ${type}`;
+            message.style.display = 'block';
+            
+            if (type === 'success') {
+                setTimeout(() => {
+                    message.style.display = 'none';
+                }, 3000);
+            }
+        }
+
+        function showLoading(text) {
+            const loading = document.getElementById('loading');
+            const loadingText = document.getElementById('loadingText');
+            loadingText.textContent = text;
+            loading.style.display = 'block';
+            
+            // 禁用按钮
+            document.getElementById('authButton').disabled = true;
+            document.getElementById('registerButton').disabled = true;
+        }
+
+        function hideLoading() {
+            document.getElementById('loading').style.display = 'none';
+            
+            // 启用按钮
+            document.getElementById('authButton').disabled = false;
+            document.getElementById('registerButton').disabled = false;
+        }
+
+        function updateIcon(icon) {
+            document.getElementById('biometricIcon').textContent = icon;
+        }
+
+        async function register() {
+            try {
+                showLoading('正在初始化注册...');
+                updateIcon('📝');
+                
+                const response = await fetch('/register/begin', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ username })
+                });
+                
+                const options = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(options.error || '注册初始化失败');
+                }
+                
+                // 转换数据格式
+                options.challenge = base64urlToBuffer(options.challenge);
+                options.user.id = base64urlToBuffer(options.user.id);
+                
+                showMessage('请按照设备提示完成生物特征注册...', 'info');
+                updateIcon('👆');
+                
+                // 调用WebAuthn API进行注册
+                const credential = await navigator.credentials.create({
+                    publicKey: options
+                });
+                
+                // 完成注册
+                const completeResponse = await fetch('/register/complete', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        username,
+                        credential: {
+                            id: credential.id,
+                            rawId: bufferToBase64url(credential.rawId),
+                            response: {
+                                attestationObject: bufferToBase64url(credential.response.attestationObject),
+                                clientDataJSON: bufferToBase64url(credential.response.clientDataJSON)
+                            },
+                            type: credential.type
+                        }
+                    })
+                });
+                
+                const result = await completeResponse.json();
+                
+                if (!completeResponse.ok) {
+                    throw new Error(result.error || '注册失败');
+                }
+                
+                showMessage('✅ 生物识别注册成功！现在可以进行验证了', 'success');
+                updateIcon('✅');
+                
+                // 隐藏注册按钮，显示认证按钮
+                document.getElementById('registerButton').style.display = 'none';
+                document.getElementById('authButton').style.display = 'block';
+                
+            } catch (error) {
+                console.error('注册错误:', error);
+                showMessage(`注册失败: ${error.message}`, 'error');
+                updateIcon('❌');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        async function authenticate() {
+            try {
+                showLoading('正在准备验证...');
+                updateIcon('🔍');
+                
+                const response = await fetch('/authenticate/begin', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ username })
+                });
+                
+                const options = await response.json();
+                
+                if (!response.ok) {
+                    if (response.status === 400) {
+                        showMessage('检测到您还未注册生物识别，请先完成注册', 'info');
+                        updateIcon('📝');
+                        // 显示注册按钮
+                        document.getElementById('registerButton').style.display = 'block';
+                        document.getElementById('authButton').style.display = 'none';
+                        hideLoading();
+                        return;
+                    }
+                    throw new Error(options.error || '认证初始化失败');
+                }
+                
+                // 转换数据格式
+                options.challenge = base64urlToBuffer(options.challenge);
+                options.allowCredentials = options.allowCredentials.map(cred => ({
+                    ...cred,
+                    id: base64urlToBuffer(cred.id)
+                }));
+                
+                showMessage('请按照设备提示完成生物识别验证...', 'info');
+                updateIcon('👁️‍🗨️');
+                
+                // 调用WebAuthn API进行认证
+                const credential = await navigator.credentials.get({
+                    publicKey: options
+                });
+                
+                // 完成认证
+                const completeResponse = await fetch('/authenticate/complete', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        username,
+                        credential: {
+                            id: credential.id,
+                            rawId: bufferToBase64url(credential.rawId),
+                            response: {
+                                authenticatorData: bufferToBase64url(credential.response.authenticatorData),
+                                clientDataJSON: bufferToBase64url(credential.response.clientDataJSON),
+                                signature: bufferToBase64url(credential.response.signature),
+                                userHandle: credential.response.userHandle ? bufferToBase64url(credential.response.userHandle) : null
+                            },
+                            type: credential.type
+                        }
+                    })
+                });
+                
+                const result = await completeResponse.json();
+                
+                if (!completeResponse.ok) {
+                    throw new Error(result.error || '认证失败');
+                }
+                
+                showMessage('✅ 验证成功！正在进入控制面板...', 'success');
+                updateIcon('🎉');
+                
+                // 跳转到控制面板
+                setTimeout(() => {
+                    window.location.href = '/';
+                }, 1500);
+                
+            } catch (error) {
+                console.error('认证错误:', error);
+                showMessage(`验证失败: ${error.message}`, 'error');
+                updateIcon('❌');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // Base64URL编码解码工具函数
+        function base64urlToBuffer(base64url) {
+            const base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
+            const padded = base64.padEnd(base64.length + (4 - base64.length % 4) % 4, '=');
+            const binary = atob(padded);
+            const buffer = new ArrayBuffer(binary.length);
+            const view = new Uint8Array(buffer);
+            for (let i = 0; i < binary.length; i++) {
+                view[i] = binary.charCodeAt(i);
+            }
+            return buffer;
+        }
+
+        function bufferToBase64url(buffer) {
+            const binary = String.fromCharCode(...new Uint8Array(buffer));
+            const base64 = btoa(binary);
+            return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+        }
+
+        // 页面加载时的初始化
+        window.addEventListener('load', () => {
+            updateIcon('🔍');
+            
+            // 检查是否已经注册过
+            fetch('/authenticate/begin', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ username })
+            }).then(response => {
+                if (response.status === 400) {
+                    // 未注册，显示欢迎信息
+                    showMessage('欢迎首次使用！请先注册您的生物识别信息', 'info');
+                    document.getElementById('registerButton').style.display = 'block';
+                    document.getElementById('authButton').style.display = 'none';
+                } else {
+                    // 已注册，可以直接认证
+                    showMessage('请进行生物识别验证以访问控制面板', 'info');
+                }
+            }).catch(() => {
+                // 网络错误等
+                showMessage('系统初始化完成，请进行生物识别验证', 'info');
+            });
+        });
+    </script>
+</body>
+</html>
