@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>远程控制 Windows 主机</title>
+    <!-- Emoji SVG Favicon 居中显示 -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text x='50%' y='58%' text-anchor='middle' dominant-baseline='middle' font-size='70'>🖥️</text></svg>">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {
+            background: #f0f4f8;
+            font-family: "Segoe UI", "Microsoft YaHei", Arial, sans-serif;
+            color: #222;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            max-width: 420px;
+            margin: 60px auto;
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 4px 32px rgba(33, 150, 243, 0.10);
+            padding: 36px 26px 32px 26px;
+            text-align: center;
+        }
+        h1 {
+            font-size: 1.35rem;
+            color: #2196f3;
+            font-weight: 700;
+            margin-bottom: 26px;
+            letter-spacing: 1px;
+        }
+        .status {
+            font-size: 1.02rem;
+            margin-bottom: 12px;
+            padding: 10px 0;
+            min-height: 30px;
+            border-radius: 9px;
+            font-weight: 500;
+            background: #f2f6fa;
+            transition: background 0.25s, color 0.25s;
+            box-shadow: 0 1px 4px rgba(33, 150, 243, 0.06);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .status.online {
+            background: #e3f9ec;
+            color: #2e7d32;
+        }
+        .status.offline {
+            background: #ffebee;
+            color: #d32f2f;
+        }
+        .status.detecting {
+            background: #f5f5f5;
+            color: #888;
+        }
+        .button-container {
+            display: flex;
+            gap: 12px;
+            margin-top: 22px;
+            margin-bottom: 8px;
+        }
+        .control-button {
+            flex: 1;
+            padding: 11px 20px;
+            border: none;
+            border-radius: 50px;
+            font-size: 1.08rem;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(33, 150, 243, 0.10);
+            transition: all 0.3s;
+        }
+        .wake-button {
+            background: linear-gradient(90deg, #2196f3 0%, #42a5f5 100%);
+            color: white;
+        }
+        .wake-button:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(33, 150, 243, 0.20);
+        }
+        .sleep-button {
+            background: linear-gradient(90deg, #6f42c1 0%, #8e44ad 100%);
+            color: white;
+        }
+        .sleep-button:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(111, 66, 193, 0.20);
+        }
+        .control-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+        .loading {
+            display: none;
+            margin: 18px auto 0 auto;
+        }
+        .spinner {
+            border: 4px solid #e3e9f0;
+            border-top: 4px solid #2196F3;
+            border-radius: 50%;
+            width: 21px;
+            height: 21px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            vertical-align: middle;
+            margin-right: 8px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg);}
+            100% { transform: rotate(360deg);}
+        }
+        .message {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 7px;
+            display: none;
+            font-size: 1.05rem;
+        }
+        .message.success {
+            background: #e3f9ec;
+            color: #2e7d32;
+        }
+        .message.error {
+            background: #ffebee;
+            color: #d32f2f;
+        }
+        .sleep-info {
+            background: #e8f4fd;
+            border-left: 4px solid #2196f3;
+            padding: 12px;
+            margin: 16px 0;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            text-align: left;
+            color: #1565c0;
+        }
+        @media (max-width: 520px) {
+            .container {
+                max-width: 99vw;
+                padding: 16px 3vw 24px 3vw;
+            }
+            h1 { font-size: 1.09rem; }
+            .button-container {
+                flex-direction: column;
+                gap: 8px;
+            }
+            .control-button {
+                font-size: 1.05rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🖥️ 远程控制 Windows 主机</h1>
+        
+        <div id="status" class="status detecting">检查服务器状态中...</div>
+        <div id="win_status" class="status detecting" style="margin-top:10px;">检查 Windows 主机状态中...</div>
+        
+        <div class="sleep-info">
+            <strong>💡 功能说明：</strong><br>
+            • 唤醒：通过网络唤醒包启动主机<br>
+            • 睡眠：使用优化方法进入睡眠模式（非休眠）
+        </div>
+        
+        <div class="button-container">
+            <button id="wakeButton" class="control-button wake-button" onclick="wakeComputer()" disabled>
+                🚀 唤醒主机
+            </button>
+            <button id="sleepButton" class="control-button sleep-button" onclick="sleepComputer()" disabled>
+                😴 睡眠主机
+            </button>
+        </div>
+        
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p id="loadingText">处理中...</p>
+        </div>
+        
+        <div id="message" class="message"></div>
+    </div>
+
+    <script>
+        let isWindowsOnline = false;
+        let isUbuntuOnline = false;
+
+        // 检查 Ubuntu 服务器状态
+        function checkStatus() {
+            fetch('/status')
+                .then(response => response.json())
+                .then(data => {
+                    const statusDiv = document.getElementById('status');
+                    
+                    isUbuntuOnline = data.ubuntu_server === 'online';
+                    
+                    if (isUbuntuOnline) {
+                        statusDiv.textContent = '✅ Ubuntu 服务器在线';
+                        statusDiv.className = 'status online';
+                    } else {
+                        statusDiv.textContent = '❌ Ubuntu 服务器离线';
+                        statusDiv.className = 'status offline';
+                    }
+                    
+                    updateButtonStates();
+                })
+                .catch(error => {
+                    const statusDiv = document.getElementById('status');
+                    statusDiv.textContent = '❌ 无法连接到服务器';
+                    statusDiv.className = 'status offline';
+                    isUbuntuOnline = false;
+                    updateButtonStates();
+                });
+        }
+
+        // 检查 Windows 主机状态
+        function checkWinStatus() {
+            fetch('/win_status')
+                .then(response => response.json())
+                .then(data => {
+                    const winStatusDiv = document.getElementById('win_status');
+                    isWindowsOnline = data.win_status === 'online';
+                    
+                    if (isWindowsOnline) {
+                        winStatusDiv.textContent = '✅ Windows 主机已开机';
+                        winStatusDiv.className = 'status online';
+                    } else {
+                        winStatusDiv.textContent = '❌ Windows 主机未开机';
+                        winStatusDiv.className = 'status offline';
+                    }
+                    
+                    updateButtonStates();
+                })
+                .catch(error => {
+                    const winStatusDiv = document.getElementById('win_status');
+                    winStatusDiv.textContent = '❌ 无法检测 Windows 主机状态';
+                    winStatusDiv.className = 'status offline';
+                    isWindowsOnline = false;
+                    updateButtonStates();
+                });
+        }
+
+        // 更新按钮状态
+        function updateButtonStates() {
+            const wakeButton = document.getElementById('wakeButton');
+            const sleepButton = document.getElementById('sleepButton');
+            
+            // 唤醒按钮：Ubuntu在线时可用
+            wakeButton.disabled = !isUbuntuOnline;
+            
+            // 睡眠按钮：Ubuntu在线且Windows在线时可用
+            sleepButton.disabled = !isUbuntuOnline || !isWindowsOnline;
+        }
+
+        // 显示正在检测 Windows 启动状态
+        function showWinDetecting() {
+            const winStatusDiv = document.getElementById('win_status');
+            winStatusDiv.innerHTML = '<span class="spinner"></span>正在检测 Windows 启动状态...';
+            winStatusDiv.className = 'status detecting';
+        }
+
+        // 显示正在检测 Windows 睡眠状态
+        function showWinSleeping() {
+            const winStatusDiv = document.getElementById('win_status');
+            winStatusDiv.innerHTML = '<span class="spinner"></span>正在检测 Windows 睡眠状态...';
+            winStatusDiv.className = 'status detecting';
+        }
+
+        // 显示加载状态
+        function showLoading(text) {
+            const loading = document.getElementById('loading');
+            const loadingText = document.getElementById('loadingText');
+            const message = document.getElementById('message');
+            
+            loadingText.textContent = text;
+            loading.style.display = 'block';
+            message.style.display = 'none';
+        }
+
+        // 隐藏加载状态
+        function hideLoading() {
+            document.getElementById('loading').style.display = 'none';
+        }
+
+        // 显示消息
+        function showMessage(text, isSuccess) {
+            const message = document.getElementById('message');
+            message.textContent = text;
+            message.className = `message ${isSuccess ? 'success' : 'error'}`;
+            message.style.display = 'block';
+        }
+
+        // 唤醒按钮事件
+        function wakeComputer() {
+            const wakeButton = document.getElementById('wakeButton');
+            const sleepButton = document.getElementById('sleepButton');
+            
+            wakeButton.disabled = true;
+            sleepButton.disabled = true;
+            showLoading('正在发送唤醒信号...');
+            showWinDetecting();
+
+            fetch('/wake', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'}
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                
+                if (data.success) {
+                    showMessage('✅ ' + data.message, true);
+                    // 开始轮询 Windows 启动状态
+                    pollWinStatusForBoot();
+                } else {
+                    showMessage('❌ ' + data.message, false);
+                    updateButtonStates();
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                showMessage('❌ 网络错误: ' + error.message, false);
+                updateButtonStates();
+            });
+        }
+
+        // 睡眠按钮事件
+        function sleepComputer() {
+            if (!confirm('确定要让 Windows 主机进入睡眠状态吗？\n\n主机将进入低功耗睡眠模式，可通过网络唤醒恢复。')) {
+                return;
+            }
+
+            const wakeButton = document.getElementById('wakeButton');
+            const sleepButton = document.getElementById('sleepButton');
+            
+            wakeButton.disabled = true;
+            sleepButton.disabled = true;
+            showLoading('正在发送睡眠命令...');
+            showWinSleeping();
+
+            fetch('/sleep', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'}
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                
+                if (data.success) {
+                    showMessage('✅ ' + data.message, true);
+                    // 开始轮询 Windows 睡眠状态
+                    pollWinStatusForSleep();
+                } else {
+                    showMessage('❌ ' + data.message, false);
+                    updateButtonStates();
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                showMessage('❌ 网络错误: ' + error.message, false);
+                updateButtonStates();
+            });
+        }
+
+        // 轮询检测 Windows 是否启动
+        function pollWinStatusForBoot() {
+            const timeoutMs = 60000; // 最多检测60秒
+            const intervalMs = 2000; // 每2秒检测一次
+            let elapsed = 0;
+
+            function check() {
+                fetch('/win_status')
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.online) {
+                            document.getElementById('win_status').textContent = '✅ Windows 主机已开机';
+                            document.getElementById('win_status').className = 'status online';
+                            isWindowsOnline = true;
+                            updateButtonStates();
+                        } else {
+                            elapsed += intervalMs;
+                            if (elapsed < timeoutMs) {
+                                setTimeout(check, intervalMs);
+                            } else {
+                                document.getElementById('win_status').textContent = '❌ Windows 主机未开机';
+                                document.getElementById('win_status').className = 'status offline';
+                                isWindowsOnline = false;
+                                updateButtonStates();
+                            }
+                        }
+                    })
+                    .catch(() => {
+                        elapsed += intervalMs;
+                        if (elapsed < timeoutMs) {
+                            setTimeout(check, intervalMs);
+                        } else {
+                            document.getElementById('win_status').textContent = '❌ 检测失败';
+                            document.getElementById('win_status').className = 'status offline';
+                            isWindowsOnline = false;
+                            updateButtonStates();
+                        }
+                    });
+            }
+            check();
+        }
+
+        // 轮询检测 Windows 是否进入睡眠
+        function pollWinStatusForSleep() {
+            const timeoutMs = 30000; // 最多检测30秒
+            const intervalMs = 2000; // 每2秒检测一次
+            let elapsed = 0;
+
+            function check() {
+                fetch('/win_status')
+                    .then(response => response.json())
+                    .then(data => {
+                        if (!data.online) {
+                            document.getElementById('win_status').textContent = '✅ Windows 主机已进入睡眠';
+                            document.getElementById('win_status').className = 'status offline';
+                            isWindowsOnline = false;
+                            updateButtonStates();
+                        } else {
+                            elapsed += intervalMs;
+                            if (elapsed < timeoutMs) {
+                                setTimeout(check, intervalMs);
+                            } else {
+                                document.getElementById('win_status').textContent = '⚠️ Windows 主机仍在运行';
+                                document.getElementById('win_status').className = 'status online';
+                                isWindowsOnline = true;
+                                updateButtonStates();
+                            }
+                        }
+                    })
+                    .catch(() => {
+                        elapsed += intervalMs;
+                        if (elapsed < timeoutMs) {
+                            setTimeout(check, intervalMs);
+                        } else {
+                            document.getElementById('win_status').textContent = '❌ 检测失败';
+                            document.getElementById('win_status').className = 'status offline';
+                            isWindowsOnline = false;
+                            updateButtonStates();
+                        }
+                    });
+            }
+            check();
+        }
+
+        // 页面加载时初始化状态
+        checkStatus();
+        checkWinStatus();
+        // 每30秒检查一次状态
+        setInterval(checkStatus, 30000);
+        setInterval(checkWinStatus, 30000);
+    </script>
+</body>
+</html>

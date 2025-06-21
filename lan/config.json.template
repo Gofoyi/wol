@@ -1,0 +1,6 @@
+{
+    "windows_host_ip": "192.168.1.100",
+    "windows_ssh_user": "your_username",
+    "windows_ssh_password": "your_password",
+    "windows_ssh_port": 22
+}

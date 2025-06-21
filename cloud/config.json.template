@@ -1,0 +1,5 @@
+{
+    "ubuntu_server_host": "your-ubuntu-server.example.com",
+    "ubuntu_port": 5000,
+    "windows_mac": "AA:BB:CC:DD:EE:FF"
+}
