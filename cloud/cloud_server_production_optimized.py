@@ -9,6 +9,7 @@ import base64
 from functools import wraps
 from datetime import datetime, timedelta
 import logging
+import socket  # 添加socket模块用于DNS解析
 
 app = Flask(__name__)
 
@@ -60,6 +61,58 @@ app.config.update(
     SESSION_COOKIE_SAMESITE='Strict', # CSRF保护
     PERMANENT_SESSION_LIFETIME=timedelta(minutes=5)
 )
+
+# 域名常量
+DOMAIN_NAME = config['bypass_domain']
+
+# DNS缓存
+_dns_cache = {}
+_dns_cache_time = {}
+DNS_CACHE_TTL = 300  # 5分钟缓存
+
+def resolve_domain_ipv4(domain):
+    """解析域名的IPv4地址（带缓存）"""
+    try:
+        current_time = datetime.now()
+        
+        # 检查缓存
+        if (domain in _dns_cache and 
+            domain in _dns_cache_time and 
+            (current_time - _dns_cache_time[domain]).total_seconds() < DNS_CACHE_TTL):
+            return _dns_cache[domain]
+        
+        # 执行DNS解析
+        result = socket.getaddrinfo(domain, None, socket.AF_INET)
+        if result:
+            ip = result[0][4][0]
+            # 缓存结果
+            _dns_cache[domain] = ip
+            _dns_cache_time[domain] = current_time
+            return ip
+            
+    except Exception as e:
+        logger.error(f"解析域名 {domain} 失败: {e}")
+        # 如果解析失败但有缓存，返回缓存结果
+        if domain in _dns_cache:
+            logger.info(f"DNS解析失败，使用缓存: {_dns_cache[domain]}")
+            return _dns_cache[domain]
+    return None
+
+def check_ip_bypass_auth(client_ip):
+    """检查客户端IP是否与域名解析IP相同，如果相同则可跳过生物验证"""
+    try:
+        domain_ip = resolve_domain_ipv4(DOMAIN_NAME)
+        
+        if domain_ip and client_ip == domain_ip:
+            logger.info(f"✅ IP认证通过: {client_ip} (本地网络)")
+            return True
+        else:
+            logger.info(f"🌐 远程访问: {client_ip} != {domain_ip} (需生物验证)")
+            return False
+    except Exception as e:
+        logger.error(f"IP检查异常: {e}")
+        return False
+
 
 # 从配置文件读取服务器配置
 UBUNTU_SERVER_HOST = config['ubuntu_server_host']
@@ -125,18 +178,52 @@ def clean_expired_challenges():
         logger.error(f"清理过期挑战失败: {e}")
 
 def require_biometric_auth(f):
-    """需要生物识别认证的装饰器"""
+    """需要生物识别认证或IP认证的装饰器"""
     @wraps(f)
     def decorated_function(*args, **kwargs):
+        client_ip = request.remote_addr
+        
+        # 检查IP认证
+        if session.get('ip_bypass_authenticated') and session.get('auth_method') == 'ip_bypass':
+            try:
+                auth_time = datetime.fromisoformat(session['auth_time'])
+                if datetime.now() - auth_time <= timedelta(seconds=SESSION_TIMEOUT):                    # IP认证有效，更新会话时间
+                    session['auth_time'] = datetime.now().isoformat()
+                    return f(*args, **kwargs)
+                else:
+                    # IP认证超时，重新检查IP
+                    if check_ip_bypass_auth(client_ip):
+                        session['auth_time'] = datetime.now().isoformat()
+                        return f(*args, **kwargs)
+                    else:
+                        session.clear()
+                        logger.info(f"IP认证失效: {client_ip}")
+                        return jsonify({"error": "IP认证失效，需要生物识别认证", "redirect": "/"}), 401
+            except ValueError:
+                session.clear()
+                logger.warning("无效的IP认证会话时间格式")
+                return jsonify({"error": "会话数据无效", "redirect": "/"}), 401
+        
+        # 检查生物识别认证
         if ('biometric_authenticated' not in session or 
             not session['biometric_authenticated'] or
             'auth_time' not in session):
-            logger.warning(f"未认证访问尝试: {request.remote_addr} -> {request.endpoint}")
+            # 如果没有生物识别认证，再次检查IP
+            if check_ip_bypass_auth(client_ip):
+                # 重新设置IP认证会话                
+                session.permanent = True
+                session['ip_bypass_authenticated'] = True
+                session['username'] = 'local_user'
+                session['auth_time'] = datetime.now().isoformat()
+                session['auth_method'] = 'ip_bypass'
+                logger.info(f"API访问IP认证: {client_ip}")
+                return f(*args, **kwargs)            
+            logger.warning(f"未认证访问: {client_ip} -> {request.endpoint}")
             return jsonify({"error": "需要生物识别认证", "redirect": "/"}), 401
         
         try:
             auth_time = datetime.fromisoformat(session['auth_time'])
-            if datetime.now() - auth_time > timedelta(seconds=SESSION_TIMEOUT):
+            if datetime.now() - auth_time > timedelta(seconds=SESSION_TIMEOUT):                
                 session.clear()
                 logger.info(f"会话超时: {session.get('username', 'unknown')}")
                 return jsonify({"error": "认证已超时，请重新进行生物识别", "redirect": "/"}), 401
@@ -173,20 +260,137 @@ def after_request(response):
 @app.route('/')
 def index():
     """主页面"""
-    if (session.get('biometric_authenticated') and 'auth_time' in session):
+    # 检查现有的认证会话
+    if (session.get('biometric_authenticated') or session.get('ip_bypass_authenticated')) and 'auth_time' in session:
         try:
             auth_time = datetime.fromisoformat(session['auth_time'])
             if datetime.now() - auth_time <= timedelta(seconds=SESSION_TIMEOUT):
                 remaining_time = SESSION_TIMEOUT - int((datetime.now() - auth_time).total_seconds())
+                auth_method = '生物识别' if session.get('biometric_authenticated') else 'IP认证'
+                username = session.get('username', 'user')
+                if session.get('ip_bypass_authenticated'):
+                    username = '本地用户'
+                
                 return render_template('dashboard.html', 
                     session_timeout=remaining_time,
-                    username=session.get('username', 'user'))
+                    username=username,
+                    auth_method=auth_method)
         except ValueError:
             pass
     
     session.clear()
     return render_template('biometric_auth.html')
 
+@app.route('/check_ip_bypass', methods=['POST'])
+def check_ip_bypass():
+    """检查客户端IP是否可以跳过生物验证"""
+    try:
+        data = request.get_json()
+        client_ip = data.get('client_ip') if data else None
+        
+        if not client_ip:
+            return jsonify({
+                "success": False,
+                "bypass": False,
+                "message": "无法获取客户端IP"
+            })
+        
+        if check_ip_bypass_auth(client_ip):
+            # IP匹配，设置会话并返回成功
+            session.permanent = True
+            session['ip_bypass_authenticated'] = True
+            session['username'] = 'local_user'
+            session['auth_time'] = datetime.now().isoformat()
+            session['auth_method'] = 'ip_bypass'            
+            logger.info(f"IP认证成功: {client_ip} (会话创建)")
+            return jsonify({
+                "success": True,
+                "bypass": True,
+                "message": "IP匹配，跳过生物验证",
+                "redirect": "/"
+            })
+        else:
+            return jsonify({
+                "success": True,
+                "bypass": False,
+                "message": "需要生物验证"
+            })
+            
+    except Exception as e:
+        logger.error(f"IP检查失败: {e}")
+        return jsonify({
+            "success": False,
+            "bypass": False,
+            "message": "IP检查失败，需要生物验证"
+        })
+
+def get_real_client_ip():
+    """获取客户端真实IP地址"""
+    # 尝试从各种HTTP头获取真实IP
+    headers_to_check = [
+        'X-Forwarded-For',
+        'X-Real-IP', 
+        'CF-Connecting-IP',
+        'X-Original-Forwarded-For',
+        'X-Client-IP',
+        'True-Client-IP'
+    ]
+    
+    for header in headers_to_check:
+        value = request.headers.get(header, '').strip()
+        if value:
+            # X-Forwarded-For可能包含多个IP，取第一个
+            if ',' in value:
+                value = value.split(',')[0].strip()
+            
+            # 排除本地IP
+            if value and value != '127.0.0.1' and not value.startswith('192.168.') and not value.startswith('10.'):
+                logger.info(f"真实IP: {value} (来源: {header})")
+                return value
+    
+    # 如果都没有，返回remote_addr
+    remote_addr = request.remote_addr
+    logger.info(f"客户端IP: {remote_addr}")
+    return remote_addr
+
+@app.route('/quick_ip_check', methods=['GET'])
+def quick_ip_check():
+    """快速IP检查（用于初步判断）"""
+    try:
+        # 获取真实IP
+        real_ip = get_real_client_ip()
+        
+        # 快速检查是否可能是本地网络
+        domain_ip = resolve_domain_ipv4(DOMAIN_NAME)
+        
+        # 如果通过HTTP头能获取到真实IP，直接进行匹配
+        if real_ip and real_ip != '127.0.0.1' and real_ip != request.remote_addr:
+            is_likely_local = real_ip == domain_ip if domain_ip else False
+        else:
+            # 如果无法从HTTP头获取真实IP，返回false，让WebRTC处理
+            is_likely_local = False
+        
+        logger.info(f"快速检查: {real_ip} {'✅ 本地' if is_likely_local else '🌐 远程'}")
+        
+        return jsonify({
+            "success": True,
+            "likely_local": is_likely_local,
+            "detected_ip": real_ip,
+            "domain_ip": domain_ip,
+            "can_bypass": is_likely_local  # 添加明确的bypass标志
+        })
+        
+    except Exception as e:
+        logger.error(f"快速IP检查异常: {e}")
+        return jsonify({
+            "success": False,
+            "likely_local": False,
+            "detected_ip": None,
+            "domain_ip": None,
+            "can_bypass": False
+        })
+
+# 生物识别认证路由
 @app.route('/register/begin', methods=['POST'])
 def register_begin():
     """开始注册生物识别凭据"""
@@ -402,8 +606,9 @@ def authenticate_complete():
 def logout():
     """登出"""
     username = session.get('username', 'unknown')
+    auth_method = session.get('auth_method', 'unknown')
     session.clear()
-    logger.info(f"用户登出: {username}")
+    logger.info(f"用户登出: {username} (认证方式: {auth_method})")
     return jsonify({"success": True, "message": "已安全登出", "redirect": "/"})
 
 @app.route('/user_info', methods=['GET'])
@@ -412,15 +617,30 @@ def user_info():
     """获取用户信息"""
     try:
         username = session.get('username')
-        user_credentials = load_user_credentials()
+        auth_method = session.get('auth_method', '生物识别')
         
+        if auth_method == 'ip_bypass':
+            return jsonify({
+                "username": username,
+                "auth_method": "IP认证",
+                "auth_method_detail": f"客户端IP与域名 {DOMAIN_NAME} 解析IP匹配",
+                "registered_at": "N/A (IP认证)",
+                "last_used": "N/A (IP认证)",
+                "session_timeout": SESSION_TIMEOUT,
+                "client_ip": request.remote_addr
+            })
+        
+        # 生物识别认证用户
+        user_credentials = load_user_credentials()
         if username in user_credentials:
             cred = user_credentials[username]
             return jsonify({
                 "username": username,
+                "auth_method": "生物识别",
                 "registered_at": cred.get('registered_at'),
                 "last_used": cred.get('last_used'),
-                "session_timeout": SESSION_TIMEOUT
+                "session_timeout": SESSION_TIMEOUT,
+                "client_ip": request.remote_addr
             })
         else:
             return jsonify({"error": "用户信息不存在"}), 404
@@ -521,13 +741,12 @@ if __name__ == '__main__':
     print(f"Windows主机MAC: {WINDOWS_MAC}")
     print(f"用户凭据存储文件: {USER_CREDENTIALS_FILE}")
     print("=====================================")
-    
-    # 确保存储目录存在
+      # 确保存储目录存在
     os.makedirs(os.path.dirname(os.path.abspath(USER_CREDENTIALS_FILE)), exist_ok=True)
     
     # 只在本地运行HTTP，让Nginx处理HTTPS
     app.run(
         host='127.0.0.1',
         port=5000,
-        debug=False
+        debug=False  # 生产环境关闭debug以提高性能
     )

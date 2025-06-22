@@ -281,8 +281,12 @@
 <body>
     <div class="header">
         <div class="auth-info">
-            <div class="auth-badge">
+            <div class="auth-badge" id="authBadge">
+                {% if auth_method == 'IP认证' %}
+                🌐 本地网络认证
+                {% else %}
                 🔐 已通过生物识别
+                {% endif %}
             </div>
             <div class="session-timer" id="sessionTimer">
                 ⏱️ 会话剩余: 5:00
@@ -297,7 +301,11 @@
         <h1>🖥️ 远程控制 Windows 主机</h1>
         
         <div class="security-notice">
+            {% if auth_method == 'IP认证' %}
+            <strong>🌐 本地网络：</strong> 您正在通过本地网络访问，无需生物识别验证
+            {% else %}
             <strong>🛡️ 安全提示：</strong> 会话将在5分钟后自动过期，届时需要重新进行生物识别验证
+            {% endif %}
         </div>
         
         <div id="status" class="status detecting">检查服务器状态中...</div>
@@ -307,7 +315,11 @@
             <strong>💡 功能说明：</strong><br>
             • 唤醒：通过网络唤醒包启动主机<br>
             • 睡眠：使用优化方法进入睡眠模式<br>
+            {% if auth_method == 'IP认证' %}
+            • 认证：本地网络自动认证，无需生物验证<br>
+            {% else %}
             • 安全：每次访问都需要生物识别验证<br>
+            {% endif %}
             • 智能：自动检测状态变化并实时更新
         </div>
         

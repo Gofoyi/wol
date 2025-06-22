@@ -435,12 +435,185 @@
             return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
         }
 
-        // 页面加载时的初始化
+        // 使用WebRTC获取真实客户端IP（优化版本）
+        function getRealClientIP() {
+            return new Promise((resolve, reject) => {
+                // 创建RTCPeerConnection
+                const pc = new RTCPeerConnection({
+                    iceServers: [
+                        { urls: 'stun:stun.l.google.com:19302' }
+                    ]
+                });
+                
+                let candidateFound = false;
+                const timeout = setTimeout(() => {
+                    pc.close();
+                    if (!candidateFound) {
+                        reject(new Error('获取IP超时'));
+                    }
+                }, 2000); // 减少到2秒超时
+                
+                // 监听ICE候选
+                pc.onicecandidate = (event) => {
+                    if (event.candidate && !candidateFound) {
+                        const candidate = event.candidate.candidate;
+                        const match = candidate.match(/(\d+\.\d+\.\d+\.\d+)/);
+                        if (match) {
+                            const ip = match[1];
+                            // 优先获取公网IP
+                            if (!ip.startsWith('192.168.') && 
+                                !ip.startsWith('10.') && 
+                                !ip.startsWith('172.') &&
+                                ip !== '127.0.0.1') {
+                                candidateFound = true;
+                                clearTimeout(timeout);
+                                pc.close();
+                                resolve(ip);
+                                return;
+                            }
+                        }
+                    }
+                };
+                
+                // 创建数据通道触发ICE收集
+                pc.createDataChannel('test');
+                
+                // 创建offer
+                pc.createOffer()
+                    .then(offer => pc.setLocalDescription(offer))
+                    .catch(reject);
+            });
+        }
+
+        // 快速IP检查（使用服务器端检测）
+        function quickIPCheck() {
+            return fetch('/quick_ip_check', { method: 'GET' })
+                .then(response => response.json())
+                .then(data => {
+                    console.log('快速IP检查结果:', data);
+                    if (data.success && data.can_bypass) {
+                        // 服务器端检测到可以bypass，立即设置会话
+                        return fetch('/check_ip_bypass', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ client_ip: data.detected_ip })
+                        }).then(res => res.json());
+                    }
+                    return { bypass: false, quick_check: true };
+                })
+                .catch(error => {
+                    console.error('快速IP检查失败:', error);
+                    return { bypass: false, quick_check: false };
+                });
+        }
+
+        // 页面加载时的初始化（优化版本）
         window.addEventListener('load', () => {
             updateIcon('🔍');
+            showMessage('正在检测网络环境...', 'info');
             
-            // 检查是否已经注册过
-            fetch('/authenticate/begin', {
+            let ipCheckCompleted = false;
+            let biometricReady = false;
+            let checkResult = null;
+            let bypassDetected = false;  // 新增：标记是否检测到bypass
+            
+            // 首先进行快速服务器端检测
+            quickIPCheck().then(result => {
+                if (result.bypass) {
+                    // 快速检测成功，IP匹配
+                    bypassDetected = true;
+                    ipCheckCompleted = true;
+                    showMessage('🌐 检测到本地网络访问，正在自动登录...', 'success');
+                    updateIcon('🌐');
+                    
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 800);
+                    return;
+                }
+                
+                // 快速检测未通过，开始WebRTC检测
+                console.log('快速检测未通过，启动WebRTC检测...');
+                if (!bypassDetected) {
+                    showMessage('正在进行网络身份验证...', 'info');
+                }
+                
+                getRealClientIP()
+                    .then(clientIP => {
+                        console.log('WebRTC获取到IP:', clientIP);
+                        return fetch('/check_ip_bypass', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ client_ip: clientIP })
+                        }).then(res => res.json());
+                    })
+                    .then(data => {
+                        ipCheckCompleted = true;
+                        checkResult = data;
+                        
+                        if (data.success && data.bypass) {
+                            // WebRTC检测成功，IP匹配
+                            bypassDetected = true;
+                            showMessage('🌐 检测到本地网络访问，正在自动登录...', 'success');
+                            updateIcon('🌐');
+                            
+                            setTimeout(() => {
+                                window.location.href = '/';
+                            }, 800);
+                        } else {
+                            // IP不匹配，需要等待生物识别准备完成后显示UI
+                            console.log('IP检测未通过，等待显示生物识别UI');
+                            if (biometricReady && !bypassDetected) {
+                                showFinalUI();
+                            }
+                        }
+                    })
+                    .catch(error => {
+                        console.error('WebRTC IP检查失败:', error);
+                        ipCheckCompleted = true;
+                        checkResult = { bypass: false };
+                        
+                        // 只有在没有bypass的情况下才显示生物识别UI
+                        if (biometricReady && !bypassDetected) {
+                            showFinalUI();
+                        }
+                    });
+            });
+            
+            // 并行准备生物识别
+            setTimeout(() => {
+                if (!bypassDetected) {  // 只有在没有bypass时才准备生物识别
+                    checkBiometricRegistration().then(() => {
+                        biometricReady = true;
+                        // 只有在IP检测完成且没有bypass时才显示最终UI
+                        if (ipCheckCompleted && (!checkResult || !checkResult.bypass) && !bypassDetected) {
+                            showFinalUI();
+                        }
+                    });
+                }
+            }, 300); // 给IP检测更多时间
+        });
+        
+        // 显示最终UI
+        function showFinalUI() {
+            // 根据按钮显示状态判断是否已注册
+            const registerButton = document.getElementById('registerButton');
+            const authButton = document.getElementById('authButton');
+            
+            if (registerButton.style.display === 'block') {
+                // 未注册状态
+                showMessage('欢迎首次使用！请先注册您的生物识别信息', 'info');
+                updateIcon('📝');
+            } else {
+                // 已注册状态
+                showMessage('请进行生物识别验证以访问控制面板', 'info');
+                updateIcon('🔐');
+            }
+        }
+        
+        // 检查生物识别注册状态（优化版本）
+        function checkBiometricRegistration() {
+            return fetch('/authenticate/begin', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -448,19 +621,20 @@
                 body: JSON.stringify({ username })
             }).then(response => {
                 if (response.status === 400) {
-                    // 未注册，显示欢迎信息
-                    showMessage('欢迎首次使用！请先注册您的生物识别信息', 'info');
+                    // 未注册，显示注册按钮但不立即显示消息
                     document.getElementById('registerButton').style.display = 'block';
                     document.getElementById('authButton').style.display = 'none';
                 } else {
-                    // 已注册，可以直接认证
-                    showMessage('请进行生物识别验证以访问控制面板', 'info');
+                    // 已注册，可以直接认证，但不立即显示消息
+                    document.getElementById('registerButton').style.display = 'none';
+                    document.getElementById('authButton').style.display = 'block';
                 }
+                return Promise.resolve();
             }).catch(() => {
-                // 网络错误等
-                showMessage('系统初始化完成，请进行生物识别验证', 'info');
+                // 网络错误等，准备默认UI但不显示消息
+                return Promise.resolve();
             });
-        });
+        }
     </script>
 </body>
 </html>

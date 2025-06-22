@@ -1,5 +1,6 @@
 {
     "ubuntu_server_host": "your-ubuntu-server.example.com",
     "ubuntu_port": 5000,
-    "windows_mac": "AA:BB:CC:DD:EE:FF"
-}
+    "windows_mac": "AA:BB:CC:DD:EE:FF",
+    "bypass_domain": "your-bypass_domain.example.com"
+ }
